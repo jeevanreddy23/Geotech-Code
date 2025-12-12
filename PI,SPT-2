@@ -1,0 +1,123 @@
+# cbr_predictor_fixed.py
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+import joblib
+import os
+import sys
+
+# ==================== TRAIN & SAVE MODEL (only once) ====================
+MODEL_FILE = 'cbr_randomforest_model.pkl'
+
+if not os.path.exists(MODEL_FILE):
+    print("First time running → Training the model (this may take a few seconds)...")
+    
+    np.random.seed(42)
+    n_samples = 1500
+    
+    PI = np.random.uniform(0, 70, n_samples)
+    SPT_N = np.random.uniform(1, 70, n_samples)
+    
+    # Realistic correlation based on literature (adjusted for better spread)
+    cu = (10 - 0.09 * PI) * SPT_N
+    CBR = np.clip(0.07 * (cu ** 0.84) + np.random.normal(0, 2.0, n_samples), 0.5, 100)
+    
+    data = pd.DataFrame({'PI': PI, 'SPT_N': SPT_N, 'CBR': CBR})
+    
+    X = data[['PI', 'SPT_N']]
+    y = data['CBR']
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    model = RandomForestRegressor(
+        n_estimators=300,
+        max_depth=15,
+        random_state=42,
+        n_jobs=-1
+    )
+    model.fit(X_train, y_train)
+    
+    rmse = np.sqrt(mean_squared_error(y_test, model.predict(X_test)))
+    print(f"Model trained successfully! RMSE = {rmse:.2f}")
+    
+    joblib.dump(model, MODEL_FILE)
+    print(f"Model saved as {MODEL_FILE}\n")
+else:
+    print(f"Loading existing model: {MODEL_FILE}\n")
+
+# Load the model
+model = joblib.load(MODEL_FILE)
+
+# ==================== INTERACTIVE PREDICTION (SAFE FROM EOFError) ====================
+def predict_cbr(pi, spt_n):
+    pred = model.predict([[pi, spt_n]])[0]
+    print(f"\nPredicted CBR = {pred:.2f}%")
+    
+    if pred < 3:
+        strength = "Very poor – needs major improvement"
+    elif pred < 7:
+        strength = "Poor – stabilization recommended"
+    elif pred < 12:
+        strength = "Fair – acceptable with capping layer"
+    elif pred < 25:
+        strength = "Good – suitable as sub-base"
+    else:
+        strength = "Very good to excellent"
+    
+    print(f"Subgrade quality: {strength}\n")
+    return pred
+
+print("CBR PREDICTION TOOL (using PI and SPT-N)")
+print("=" * 55)
+
+# Detect if running in interactive terminal
+if sys.stdin.isatty():
+    # Normal interactive mode (works in terminal, VS Code, etc.)
+    while True:
+        try:
+            pi = float(input("Enter Plasticity Index (PI) [0-70]: "))
+            spt = float(input("Enter SPT-N value [1-70]: "))
+            
+            predict_cbr(pi, spt)
+            
+            again = input("Predict another? (y/n): ").strip().lower()
+            if again not in ['y', 'yes', '']:
+                print("Thank you! Goodbye.")
+                break
+            print("-" * 55)
+                
+        except ValueError:
+            print("Please enter valid numbers!\n")
+        except EOFError:
+            print("\nInput ended. Exiting.")
+            break
+        except KeyboardInterrupt:
+            print("\nGoodbye!")
+            break
+else:
+    # Non-interactive environments (Jupyter, Colab, some IDEs)
+    print("Interactive mode not available (likely Jupyter/Colab).")
+    print("Running in manual input mode – enter values one by one:")
+    print("Example: 25 12   (PI = 25, SPT-N = 12)\n")
+    
+    try:
+        while True:
+            user_input = input("Enter PI and SPT-N (space separated) or 'quit': ").strip()
+            if user_input.lower() in ['quit', 'exit', 'q']:
+                print("Goodbye!")
+                break
+            parts = user_input.split()
+            if len(parts) != 2:
+                print("Please enter exactly two numbers (PI SPT-N)")
+                continue
+            pi, spt = map(float, parts)
+            predict_cbr(pi, spt)
+    except:
+        print("Session ended.")
+
+# Optional: Quick test predictions
+# predict_cbr(20, 10)
+# predict_cbr(35, 5)
+# predict_cbr(15, 25)
