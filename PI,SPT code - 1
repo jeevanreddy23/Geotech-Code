@@ -1,0 +1,120 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+
+# --- 1. Data Generation with Depth Integration ---
+print("--- 1. Data Loading/Generation with Depth ---")
+
+# Set seed for reproducibility
+np.random.seed(42)
+n_samples = 200
+
+# Input Features: PI, Corrected SPT-N (N60), and Depth (z)
+# Depth of the sample/test (m)
+Depth_m = np.random.uniform(0.5, 10.0, n_samples)
+# Plasticity Index (PI) (0-40) - Assumed to be measured at or near this depth
+PI = np.random.uniform(5, 40, n_samples)
+# Corrected SPT-N (N60) (5-50) - Measured at this depth
+N60 = np.random.uniform(5, 50, n_samples)
+
+# Target Variable: CBR (5-40). The synthetic relationship now includes depth.
+# CBR tends to increase with depth due to greater overburden pressure.
+CBR = (0.5 * N60) + (40 / (PI + 1)) + (0.8 * Depth_m) + np.random.normal(0, 3, n_samples)
+CBR = np.clip(CBR, 5, 40) # Ensure CBR stays within a realistic range
+
+# The DataFrame now includes depth
+data = pd.DataFrame({'Depth_m': Depth_m, 'PI': PI, 'N60': N60, 'CBR': CBR})
+
+print(f"Dataframe created with {len(data)} samples.")
+print(data.head())
+print("-" * 60)
+
+
+# --- 2. Data Preprocessing and Splitting ---
+print("--- 2. Preprocessing and Splitting ---")
+
+# Define Features (X): Now includes 'Depth_m', 'PI', and 'N60'
+X = data[['Depth_m', 'PI', 'N60']]
+y = data['CBR']
+
+# Initialize and fit the Scaler on the features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Split the data (80% for training, 20% for testing)
+X_train, X_test, y_train, y_test = train_test_split(
+    X_scaled, y, test_size=0.2, random_state=42
+)
+
+print(f"Training set size: {len(X_train)} | Testing set size: {len(X_test)}")
+print("-" * 60)
+
+
+# --- 3. Model Training (Random Forest Regressor) ---
+print("--- 3. Model Training ---")
+
+# Initialize and train the Random Forest Regressor
+rf_model = RandomForestRegressor(n_estimators=100, max_depth=8, random_state=42, n_jobs=-1)
+rf_model.fit(X_train, y_train)
+
+print("Random Forest Model Training Complete.")
+print("-" * 60)
+
+
+# --- 4. Model Evaluation ---
+print("--- 4. Model Evaluation Results ---")
+
+# Make predictions on the test set
+y_pred = rf_model.predict(X_test)
+
+# Calculate evaluation metrics
+mse = mean_squared_error(y_test, y_pred)
+rmse = np.sqrt(mse)
+r2 = r2_score(y_test, y_pred)
+
+print(f"Mean Squared Error (MSE): {mse:.2f}")
+print(f"Root Mean Squared Error (RMSE): {rmse:.2f}")
+print(f"R-squared (R2) Score: {r2:.4f}")
+
+# Visualize the comparison (Actual vs. Predicted)
+plt.figure(figsize=(8, 6))
+plt.scatter(y_test, y_pred, alpha=0.7, color='maroon')
+plt.plot([y.min(), y.max()], [y.min(), y.max()], 'r--', lw=2)
+plt.title('Actual CBR vs. Predicted CBR (with Depth)')
+plt.xlabel('Actual CBR Value')
+plt.ylabel('Predicted CBR Value')
+plt.grid(True, linestyle=':', alpha=0.6)
+plt.show()
+
+print("-" * 60)
+
+
+# --- 5. Making New Predictions (Input format matches user request) ---
+print("--- 5. Making New Predictions ---")
+
+# Define inputs based on user request: PI, Depth, N60
+new_pi = [42.0]  # Plasticity Index
+new_depth = [1.5] # Depth of the sample (m)
+new_n60 = [18.0 ] # Corrected SPT N-value
+
+new_data_input = pd.DataFrame({
+    'Depth_m': new_depth,
+    'PI': new_pi,
+    'N60': new_n60
+})
+
+# IMPORTANT: Scale the new data using the SAME trained scaler object
+new_data_scaled = scaler.transform(new_data_input)
+
+# Predict CBR
+predicted_cbr = rf_model.predict(new_data_scaled)
+
+new_data_input['Predicted_CBR'] = [f"{c:.2f}" for c in predicted_cbr]
+
+print("Predicted CBR Values at Specified Depths:")
+print(new_data_input)
+print("-" * 60)
